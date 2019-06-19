@@ -1,0 +1,706 @@
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/Additions.swift:
+    1|       |//
+    2|       |//  Additions.swift
+    3|       |//  SlackTestAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/13/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import Foundation
+   10|       |
+   11|       |extension Double {
+   12|       |    // Returns a string like "XY.Z%" from a double ranging 0…1
+   13|      0|    func percentageString() -> String {
+   14|      0|        return String(format:"%.1f", self*100) + "%"
+   15|      0|    }
+   16|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/Analyzer.swift:
+    1|       |//
+    2|       |//  Analyzer.swift
+    3|       |//  SlackTestAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/10/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import Foundation
+   10|       |
+   11|       |class Analyzer {
+   12|       |    // Build targets to be excluded from analysis, such as test bundles and external deps
+   13|       |    private let blacklistedTargetNameComponents = ["Test", "PromiseKit", "TSFKitSample", "Pods_"]
+   14|       |
+   15|       |    // Generates a CoverageReport from an input file
+   16|      0|    func analyze(filePath: String) -> CoverageReport {
+   17|      0|        let jsonReport = FileIO.loadJSONRepresentation(filePath: filePath)
+   18|      0|        let linesOfCode = self.totalLinesOfCode(from: jsonReport)
+   19|      0|        let results = self.analyzeCoverage(from: jsonReport, sumLinesOfCode: linesOfCode)
+   20|      0|        let report = CoverageReport(version: "tbd", results: results)
+   21|      0|        return report
+   22|      0|    }
+   23|       |
+   24|       |    /**
+   25|       |     Generates a CoverageReport for an specific set of files
+   26|       |
+   27|       |     - Parameter filePath: Path of raw_coverage.json file
+   28|       |     - Parameter files: Array of files to be analyzed
+   29|       |
+   30|       |     - Returns: A CoverageReport containing file level information for an specific set of files
+   31|       |    */
+   32|      0|    func analyze(filePath: String, files: [String]) -> CoverageReport {
+   33|      0|        let jsonReport = FileIO.loadJSONRepresentation(filePath: filePath)
+   34|      0|        let linesOfCode = self.totalLinesOfCode(from: jsonReport)
+   35|      0|        let results = self.analyzeCoverage(from: jsonReport, filesChanged: files, sumLinesOfCode: linesOfCode)
+   36|      0|        let report = CoverageReport(version: "tbd", results: results)
+   37|      0|        return report
+   38|      0|    }
+   39|       |
+   40|      0|    private func shouldSkipTarget(name: String) -> Bool {
+   41|      0|        for blacklistedTarget in blacklistedTargetNameComponents {
+   42|      0|            if name.contains(blacklistedTarget) { return true}
+   43|      0|        }
+   44|      0|
+   45|      0|        return false
+   46|      0|    }
+   47|       |
+   48|       |    // Computes the total lines of executable code for the project
+   49|      0|    private func totalLinesOfCode(from report: [String : Any]) -> Double {
+   50|      0|        var targets = report["targets"] as! [[String: Any]]
+   51|      0|        targets = targets.filter {
+   52|      0|            let targetPath = $0["buildProductPath"] as! String
+   53|      0|            let targetURL = URL(fileURLWithPath: targetPath)
+   54|      0|            let targetName = targetURL.lastPathComponent
+   55|      0|            return !shouldSkipTarget(name: targetName)
+   56|      0|        }
+   57|      0|        var totalLines = 0.0
+   58|      0|        targets.forEach { totalLines += $0["executableLines"] as! Double }
+   59|      0|        return totalLines
+   60|      0|    }
+   61|       |
+   62|       |    // Analyzes a JSON representation of a .xccovreport file
+   63|       |    // Returns an array of per-build-target coverage results
+   64|      0|    private func analyzeCoverage(from report: [String: Any], sumLinesOfCode: Double) -> [TargetCoverageResult] {
+   65|      0|        let targets = report["targets"] as! [[String: Any]]
+   66|      0|        var coverageResults: [TargetCoverageResult] = []
+   67|      0|        for target in targets {
+   68|      0|            let files = target["files"] as! [[String: Any]]
+   69|      0|            let executableLines = target["executableLines"] as! Double
+   70|      0|            let fileReports = analyzeFileCoverage(targetFiles: files, targetLines: executableLines)
+   71|      0|            guard let result = computeTargetCoverage(target: target, linesOfCode: sumLinesOfCode, executableLines: executableLines, fileReports: fileReports) else {
+   72|      0|                continue
+   73|      0|            }
+   74|      0|            coverageResults.append(result)
+   75|      0|        }
+   76|      0|        return coverageResults
+   77|      0|    }
+   78|       |
+   79|       |    /**
+   80|       |     Analyzes a JSON representation of raw coverage data for a given set of files
+   81|       |
+   82|       |     - Parameter report: Dictionary containing coverage raw data
+   83|       |     - Parameter filesChanged: Array of files to be analyzed
+   84|       |
+   85|       |     - Returns: A list of TargetCoverageResult containing target & file level code coverage for a given set of files
+   86|       |     */
+   87|      0|    private func analyzeCoverage(from report: [String: Any], filesChanged: [String], sumLinesOfCode: Double) -> [TargetCoverageResult] {
+   88|      0|        let targets =  report["targets"] as! [[String:Any]]
+   89|      0|        var coverageResults: [TargetCoverageResult] = []
+   90|      0|        for target in targets {
+   91|      0|            let files = target["files"] as! [[String: Any]]
+   92|      0|            let executableLines = target["executableLines"] as! Double
+   93|      0|            guard let fileReports = analyzeFileCoverage(targetFiles: files, files: filesChanged, targetLines: executableLines) else {
+   94|      0|                continue
+   95|      0|            }
+   96|      0|            guard let result = computeTargetCoverage(target: target, linesOfCode: sumLinesOfCode, executableLines: executableLines, fileReports: fileReports) else {
+   97|      0|                //TODO: Handle error
+   98|      0|                continue
+   99|      0|            }
+  100|      0|            coverageResults.append(result)
+  101|      0|        }
+  102|      0|        return coverageResults
+  103|      0|    }
+  104|       |
+  105|       |    /**
+  106|       |     Computes code coverage result for a given target
+  107|       |
+  108|       |     - Parameter target: Dictionary containing target code coverage raw data
+  109|       |     - Parameter linesOfCode: Total number of lines of code in scheme
+  110|       |     - Parameter executableLines: Total number of executable lines of code in target
+  111|       |     - Parameter fileReports: List of file level reports
+  112|       |
+  113|       |     - Returns: A TargetCoverageResult containing target & file level code coverage
+  114|       |     */
+  115|      0|    private func computeTargetCoverage(target: [String:Any], linesOfCode: Double, executableLines: Double, fileReports: [FileCoverageResult]) -> TargetCoverageResult? {
+  116|      0|        let targetPath = target["buildProductPath"] as! String
+  117|      0|        let targetURL = URL(fileURLWithPath: targetPath)
+  118|      0|        let targetName = targetURL.lastPathComponent
+  119|      0|        if shouldSkipTarget(name: targetName) { return nil }
+  120|      0|        let coveredLines = target["coveredLines"] as! Double
+  121|      0|        let weight = executableLines/linesOfCode
+  122|      0|        let coverage = coveredLines/executableLines
+  123|      0|        let result = TargetCoverageResult(name: targetName, coverage: coverage, weight: weight, fileReports: fileReports)
+  124|      0|        return result
+  125|      0|    }
+  126|       |
+  127|       |    /**
+  128|       |     Generates a list of file-level coverage reports for all files in a target
+  129|       |
+  130|       |     - Parameter targetFiles: Dictionary containing raw coverage data for all files in a target
+  131|       |     - Parameter targetLines: Total lines of code in target
+  132|       |
+  133|       |     - Returns: A list of FileCoverageResult containing file level code coverage for all files
+  134|       |     */
+  135|      0|    private func analyzeFileCoverage(targetFiles: [[String: Any]], targetLines: Double) -> [FileCoverageResult] {
+  136|      0|        var fileResults = [FileCoverageResult]()
+  137|      0|        var totalWeight = 0.0
+  138|      0|        for file in targetFiles {
+  139|      0|            let fileName = file["name"] as! String
+  140|      0|            let coveredLines = file["coveredLines"] as! Double
+  141|      0|            let executableLines = file["executableLines"] as! Double
+  142|      0|            let coverage = coveredLines/executableLines * 100
+  143|      0|            let weight = (executableLines/targetLines) * 100
+  144|      0|            totalWeight += weight
+  145|      0|            let result = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  146|      0|            fileResults.append(result)
+  147|      0|        }
+  148|      0|        return fileResults
+  149|      0|    }
+  150|       |
+  151|       |    /**
+  152|       |     Generates list of file-level coverage reports for a given set of files in a target
+  153|       |
+  154|       |     - Parameter targetFiles: Dictionary containing raw coverage data for all files in a target
+  155|       |     - Parameter targetLines: Total lines of code in target
+  156|       |     - Parameter files: Array with names of files to be analyzed
+  157|       |
+  158|       |     - Returns: A list of FileCoverageResult containing file level information for a given set of files
+  159|       |     */
+  160|      0|    private func analyzeFileCoverage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+  161|      0|        var fileReports = [FileCoverageResult]()
+  162|      0|        var fileDetected = false
+  163|      0|        for file in targetFiles {
+  164|      0|            let fileName = file["name"] as! String
+  165|      0|            if !files.contains(fileName) { continue }
+  166|      0|            let coveredLines = file["coveredLines"] as! Double
+  167|      0|            let executableLines = file["executableLines"] as! Double
+  168|      0|            let coverage = coveredLines/executableLines * 100
+  169|      0|            let weight = (executableLines/targetLines) * 100
+  170|      0|            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  171|      0|            fileReports.append(report)
+  172|      0|            fileDetected = true
+  173|      0|        }
+  174|      0|        return fileDetected ? fileReports : nil
+  175|      0|    }
+  176|       |
+  177|      0|    private func analyzeFileCoverage3(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+  178|      0|        var fileReports = [FileCoverageResult]()
+  179|      0|        var fileDetected = false
+  180|      0|        for file in targetFiles {
+  181|      0|            let fileName = file["name"] as! String
+  182|      0|            if !files.contains(fileName) { continue }
+  183|      0|            let coveredLines = file["coveredLines"] as! Double
+  184|      0|            let executableLines = file["executableLines"] as! Double
+  185|      0|            let coverage = coveredLines/executableLines * 100
+  186|      0|            let weight = (executableLines/targetLines) * 100
+  187|      0|            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  188|      0|            fileReports.append(report)
+  189|      0|            fileDetected = true
+  190|      0|        }
+  191|      0|        return fileDetected ? fileReports : nil
+  192|      0|    }
+  193|      0|        private func analyzeFileCoverage4(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+  194|      0|        var fileReports = [FileCoverageResult]()
+  195|      0|        var fileDetected = false
+  196|      0|        for file in targetFiles {
+  197|      0|            let fileName = file["name"] as! String
+  198|      0|            if !files.contains(fileName) { continue }
+  199|      0|            let coveredLines = file["coveredLines"] as! Double
+  200|      0|            let executableLines = file["executableLines"] as! Double
+  201|      0|            let coverage = coveredLines/executableLines * 100
+  202|      0|            let weight = (executableLines/targetLines) * 100
+  203|      0|            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  204|      0|            fileReports.append(report)
+  205|      0|            fileDetected = true
+  206|      0|        }
+  207|      0|        return fileDetected ? fileReports : nil
+  208|      0|    }
+  209|      0|        private func analyzeFileCoverage5(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+  210|      0|        var fileReports = [FileCoverageResult]()
+  211|      0|        var fileDetected = false
+  212|      0|        for file in targetFiles {
+  213|      0|            let fileName = file["name"] as! String
+  214|      0|            if !files.contains(fileName) { continue }
+  215|      0|            let coveredLines = file["coveredLines"] as! Double
+  216|      0|            let executableLines = file["executableLines"] as! Double
+  217|      0|            let coverage = coveredLines/executableLines * 100
+  218|      0|            let weight = (executableLines/targetLines) * 100
+  219|      0|            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  220|      0|            fileReports.append(report)
+  221|      0|            fileDetected = true
+  222|      0|        }
+  223|      0|        return fileDetected ? fileReports : nil
+  224|      0|    }
+  225|      0|        private func analyzeFileCoverage6(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+  226|      0|        var fileReports = [FileCoverageResult]()
+  227|      0|        var fileDetected = false
+  228|      0|        for file in targetFiles {
+  229|      0|            let fileName = file["name"] as! String
+  230|      0|            if !files.contains(fileName) { continue }
+  231|      0|            let coveredLines = file["coveredLines"] as! Double
+  232|      0|            let executableLines = file["executableLines"] as! Double
+  233|      0|            let coverage = coveredLines/executableLines * 100
+  234|      0|            let weight = (executableLines/targetLines) * 100
+  235|      0|            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+  236|      0|            fileReports.append(report)
+  237|      0|            fileDetected = true
+  238|      0|        }
+  239|      0|        return fileDetected ? fileReports : nil
+  240|      0|    }
+  241|       |
+  242|       |
+  243|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/CoverageReport.swift:
+    1|       |//
+    2|       |//  CoverageReport.swift
+    3|       |//  SlackTestAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/10/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import Foundation
+   10|       |
+   11|       |struct CoverageReport: Codable, JsonConvertible {
+   12|       |    // The version described by this report
+   13|       |    let version: String
+   14|       |
+   15|       |    // Individual results for each build target, keyed by target name
+   16|       |    let resultsByName: [String: TargetCoverageResult]
+   17|       |
+   18|       |    // Newline-separated results for each build target in this report
+   19|      0|    var description: String {
+   20|      0|        let perTargetResults = Array(resultsByName.values).sorted {
+   21|      0|            return $0.name < $1.name
+   22|      0|        }
+   23|      0|        let perTargetDescriptions = perTargetResults.map { return $0.description }
+   24|      0|        return perTargetDescriptions.joined(separator: "\n")
+   25|      0|    }
+   26|       |
+   27|      0|    init(version: String, results: [TargetCoverageResult]) {
+   28|      0|        self.version = version
+   29|      0|        self.resultsByName = Dictionary(uniqueKeysWithValues: results.map { ($0.name, $0) })
+   30|      0|    }
+   31|       |
+   32|      0|    func diff(_ other: CoverageReport) -> CoverageReportDiff {
+   33|      0|        let myReports = self.resultsByName
+   34|      0|        let theirReports = other.resultsByName
+   35|      0|        var diffsByTargetName: [String: Double] = [:]
+   36|      0|        let allKeys = Set(Array(myReports.keys) + Array(theirReports.keys))
+   37|      0|        allKeys.forEach {
+   38|      0|            guard let myValue = myReports[$0], let theirValue = theirReports[$0] else {
+   39|      0|                return
+   40|      0|            }
+   41|      0|            diffsByTargetName[$0] = myValue.coverage - theirValue.coverage
+   42|      0|        }
+   43|      0|
+   44|      0|        return CoverageReportDiff(firstVersion: self.version, secondVersion: other.version, deltasByTargetName: diffsByTargetName)
+   45|      0|    }
+   46|       |
+   47|      0|    func toJSON() -> Data? {
+   48|      0|        do {
+   49|      0|            return try JSONEncoder().encode(self)
+   50|      0|        } catch {
+   51|      0|            print("Error encoding " + self.version + " to JSON")
+   52|      0|            return nil
+   53|      0|        }
+   54|      0|    }
+   55|       |}
+   56|       |
+   57|       |struct CoverageReportDiff: Codable, JsonConvertible {
+   58|       |    // Coverage deltas for each build target, keyed by target name
+   59|       |    let deltasByTargetName: [String: Double]
+   60|       |
+   61|       |    // The two versions being diffed
+   62|       |    let firstReportVersion: String
+   63|       |    let secondReportVersion: String
+   64|       |
+   65|      0|    init(firstVersion: String, secondVersion: String, deltasByTargetName: [String: Double]) {
+   66|      0|        self.firstReportVersion = firstVersion
+   67|      0|        self.secondReportVersion = secondVersion
+   68|      0|        self.deltasByTargetName = deltasByTargetName
+   69|      0|    }
+   70|       |
+   71|       |    // Newline-separated deltas for each build target in this diff
+   72|      0|    var description: String {
+   73|      0|        let sortedKeys = deltasByTargetName.keys.sorted { return $0 < $1 }
+   74|      0|        let descriptions = sortedKeys.compactMap { name -> String? in
+   75|      0|            guard let delta = deltasByTargetName[name] else {
+   76|      0|                return nil
+   77|      0|            }
+   78|      0|            var deltaString = delta.percentageString()
+   79|      0|            if delta > 0.0 { deltaString = "+" + deltaString }
+   80|      0|            return name + " delta: " + deltaString
+   81|      0|        }
+   82|      0|        return descriptions.joined(separator: "\n")
+   83|      0|    }
+   84|       |
+   85|      0|    func toJSON() -> Data? {
+   86|      0|        do {
+   87|      0|            return try JSONEncoder().encode(self)
+   88|      0|        } catch {
+   89|      0|            print("Error encoding diff " + firstReportVersion + "…" + secondReportVersion + " to JSON")
+   90|      0|            return nil
+   91|      0|        }
+   92|      0|    }
+   93|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/FileCoverageResult.swift:
+    1|       |//
+    2|       |//  FileCoverageResult.swift
+    3|       |//  CoverageAnalyzer
+    4|       |//
+    5|       |//  Created by Felipe Ballesteros on 6/9/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |import Foundation
+    9|       |
+   10|       |// Struct representing coverage data for a single file
+   11|       |struct FileCoverageResult: Codable, JsonConvertible {
+   12|       |    // Name of the file
+   13|       |    let name: String
+   14|       |    // Percentage of lines of code in file that are covered by tests
+   15|       |    let coverage: Double
+   16|       |    // Percentage of target lines of code represented by this file
+   17|       |    let weight: Double
+   18|       |
+   19|      2|    init(name: String, coverage: Double, weight: Double) {
+   20|      2|        self.name = name
+   21|      2|        self.coverage = coverage
+   22|      2|        self.weight = weight
+   23|      2|    }
+   24|       |
+   25|      1|    func toJSON() -> Data? {
+   26|      1|        do {
+   27|      1|            return try JSONEncoder().encode(self)
+   28|      1|        } catch {
+   29|      0|            print("Error encoding \(self.name) to JSON")
+   30|      0|            return nil
+   31|      0|        }
+   32|      0|    }
+   33|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/FileIO.swift:
+    1|       |//
+    2|       |//  FileIO.swift
+    3|       |//  CoverageAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/13/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import Foundation
+   10|       |
+   11|       |class FileIO {
+   12|      0|    static func loadJSONRepresentation(filePath: String) -> [String: Any] {
+   13|      0|        do {
+   14|      0|            let fileURL = URL(fileURLWithPath: filePath)
+   15|      0|            let jsonData = try Data(contentsOf: fileURL)
+   16|      0|            let jsonResult = try JSONSerialization.jsonObject(with: jsonData, options: []) as! [String: Any]
+   17|      0|            return jsonResult
+   18|      0|        } catch {
+   19|      0|            print("Error loading JSON \(error)")
+   20|      0|            exit(1)
+   21|      0|        }
+   22|      0|
+   23|      0|        return [:]
+   24|      0|    }
+   25|       |
+   26|      0|    static func write(object: JsonConvertible, fileName: String) {
+   27|      0|        let currentDir = FileManager.default.currentDirectoryPath
+   28|      0|        guard let path = NSURL(fileURLWithPath: currentDir).appendingPathComponent(fileName) else {
+   29|      0|            print("Error: couldn't get file path for writing")
+   30|      0|            return
+   31|      0|        }
+   32|      0|
+   33|      0|        do {
+   34|      0|            guard let data = object.toJSON() else {
+   35|      0|                print("Error converting results to JSON")
+   36|      0|                exit(1)
+   37|      0|            }
+   38|      0|            try data.write(to: path)
+   39|      0|        } catch {
+   40|      0|            print("Error writing JSON: " + fileName)
+   41|      0|            return
+   42|      0|        }
+   43|      0|
+   44|      0|        print("Wrote results to: " + path.absoluteString)
+   45|      0|    }
+   46|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/Options.swift:
+    1|       |//
+    2|       |//  Options.swift
+    3|       |//  SlackTestAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/13/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |// Struct representing the command line arguments for this invocation
+   10|       |import Foundation
+   11|       |
+   12|       |struct Options: Equatable {
+   13|       |
+   14|       |    let mode: Mode
+   15|       |    // List of files containig raw code coverage data
+   16|       |    var reportFiles: [String] = []
+   17|       |    // List of files modified on pull request
+   18|       |    var pullFiles: [String] = []
+   19|       |
+   20|       |    enum Mode: String {
+   21|       |        // File level analysis of all files
+   22|       |        case analyzeAll
+   23|       |        // Line level analysis of all files
+   24|       |        case masterLines
+   25|       |        // Line level analysis of files modified on pr
+   26|       |        case pullLines
+   27|       |        // File level analysis of files modified on pr
+   28|       |        case analyzeFiles
+   29|       |        // File level differential coverage between all files of two reports
+   30|       |        case analyzeDiff
+   31|       |        // Invalid option
+   32|       |        case invalid
+   33|       |
+   34|      4|        init(rawValue: String, reportFileCount: Int, pullFileCount: Int) {
+   35|      4|            switch rawValue {
+   36|      4|            case "analyze-all":
+   37|      1|                if reportFileCount != 1 {
+   38|      0|                    self = .invalid
+   39|      4|                } else { self = .analyzeAll }
+   40|      4|            case "master-lines":
+   41|      0|                if reportFileCount != 1 {
+   42|      0|                    self = .invalid
+   43|      0|
+   44|      4|                } else { self = .masterLines }
+   45|      4|            case "analyze-files":
+   46|      2|                if reportFileCount != 1 && pullFileCount != 1 {
+   47|      0|                    self = .invalid
+   48|      0|
+   49|      4|                } else { self = .analyzeFiles }
+   50|      4|            case "pull-lines":
+   51|      0|                if reportFileCount != 1 && pullFileCount != 1 {
+   52|      0|                    self = .invalid
+   53|      0|
+   54|      4|                } else { self = .pullLines }
+   55|      4|            case "analyze-diff":
+   56|      0|                if reportFileCount != 2 {
+   57|      0|                    self = .invalid
+   58|      0|
+   59|      4|                } else { self = .analyzeDiff }
+   60|      4|            default: self = .invalid
+   61|      4|            }
+   62|      4|        }
+   63|       |    }
+   64|       |
+   65|       |    // Init struct by providing arguments
+   66|      4|    init(mode: Mode, pullFiles: [String], reportFiles: [String]) {
+   67|      4|        self.mode = mode
+   68|      4|        self.pullFiles = pullFiles
+   69|      4|        self.reportFiles = reportFiles
+   70|      4|    }
+   71|       |
+   72|       |    // Init struct from JSON config file
+   73|      5|    init(config: [String: Any]) {
+   74|      5|        guard let command = config["command"] as? String,
+   75|      5|            let reportFiles = config["reportFiles"] as? [String],
+   76|      5|            let pullFiles = config["pullFiles"] as? [String]
+   77|      5|            else {
+   78|      1|                self.mode = .invalid
+   79|      1|                return
+   80|      4|        }
+   81|      4|        self.mode = Mode(rawValue: command, reportFileCount: reportFiles.count, pullFileCount: pullFiles.count)
+   82|      4|        self.reportFiles = reportFiles
+   83|      4|        self.pullFiles = pullFiles
+   84|      4|    }
+   85|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzer/TargetCoverageResult.swift:
+    1|       |//
+    2|       |//  CoverageResult.swift
+    3|       |//  SlackTestAnalyzer
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 5/10/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import Foundation
+   10|       |
+   11|       |// Struct representing coverage data for a single build target
+   12|       |struct TargetCoverageResult: Codable, JsonConvertible {
+   13|       |    // Name of the build target, ex. SlackDataProviders
+   14|       |    let name: String
+   15|       |
+   16|       |    // Percentage of lines of code in this target that are exercised by tests
+   17|       |    let coverage: Double
+   18|       |
+   19|       |    // Percentage of overall project lines of code represented by this target
+   20|       |    let weight: Double
+   21|       |
+   22|       |    // List containg coverage data for files in target
+   23|       |    let fileReports: [FileCoverageResult]
+   24|       |
+   25|      0|    init(name: String, coverage: Double, weight: Double, fileReports: [FileCoverageResult]) {
+   26|      0|        self.name = name
+   27|      0|        self.coverage = coverage
+   28|      0|        self.weight = weight
+   29|      0|        self.fileReports = fileReports
+   30|      0|    }
+   31|       |
+   32|      0|    var description: String {
+   33|      0|        return name + ": coverage " + coverage.percentageString() + ". Weight: " + weight.percentageString()
+   34|      0|    }
+   35|       |
+   36|      0|    func toJSON() -> Data? {
+   37|      0|        do {
+   38|      0|            return try JSONEncoder().encode(self)
+   39|      0|        } catch {
+   40|      0|            print("Error encoding " + self.name + " to JSON")
+   41|      0|            return nil
+   42|      0|        }
+   43|      0|    }
+   44|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzerTests/AnalyzerTests.swift:
+    1|       |//
+    2|       |//  AnalyzerTests.swift
+    3|       |//  CoverageAnalyzerTests
+    4|       |//
+    5|       |//  Created by Benjamin Smith on 6/12/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import XCTest
+   10|       |
+   11|       |class CoverageAnalyzerTests: XCTestCase {
+   12|       |
+   13|      2|    override func setUp() {
+   14|      2|        // Put setup code here. This method is called before the invocation of each test method in the class.
+   15|      2|    }
+   16|       |
+   17|      2|    override func tearDown() {
+   18|      2|        // Put teardown code here. This method is called after the invocation of each test method in the class.
+   19|      2|    }
+   20|       |
+   21|       |    //TODO: Change implementation of analyze function to decode JSON from string
+   22|      1|    func testAnalyzeFiles() {
+   23|      1|    }
+   24|       |
+   25|      1|    func testPerformanceExample() {
+   26|      1|        // This is an example of a performance test case.
+   27|     10|        self.measure {
+   28|     10|            // Put the code you want to measure the time of here.
+   29|     10|        }
+   30|      1|    }
+   31|       |
+   32|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzerTests/FileCoverageResultTests.swift:
+    1|       |//
+    2|       |//  FileCoverageResultTests.swift
+    3|       |//  CoverageAnalyzerTests
+    4|       |//
+    5|       |//  Created by Felipe Ballesteros on 6/13/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import XCTest
+   10|       |
+   11|       |class FileCoverageResultTests: XCTestCase {
+   12|       |
+   13|      2|    override func setUp() {
+   14|      2|        // Put setup code here. This method is called before the invocation of each test method in the class.
+   15|      2|    }
+   16|       |
+   17|      2|    override func tearDown() {
+   18|      2|        // Put teardown code here. This method is called after the invocation of each test method in the class.
+   19|      2|    }
+   20|       |
+   21|      1|    func testFileCoverageResult() {
+   22|      1|        let name = "testFileName"
+   23|      1|        let coverage = 100.0
+   24|      1|        let weight = 50.0
+   25|      1|        let fileCoverageResult = FileCoverageResult(name: name, coverage: coverage, weight: weight)
+   26|      1|        XCTAssertEqual(fileCoverageResult.name, name)
+   27|      1|        XCTAssertEqual(fileCoverageResult.coverage, coverage)
+   28|      1|        XCTAssertEqual(fileCoverageResult.weight, weight)
+   29|      1|    }
+   30|       |
+   31|      1|    func testToJSON() {
+   32|      1|        let name = "testFileName2"
+   33|      1|        let coverage = 10.0
+   34|      1|        let weight = 10.0
+   35|      1|        let fileCoverageResult = FileCoverageResult(name: name, coverage: coverage, weight: weight)
+   36|      1|        let json = fileCoverageResult.toJSON()
+   37|      1|        do {
+   38|      1|            let jsonResult = try JSONSerialization.jsonObject(with: json!) as? [String:Any]
+   39|      1|            XCTAssertEqual(jsonResult!["name"] as? String, name)
+   40|      1|            XCTAssertEqual(jsonResult!["coverage"] as? Double, coverage)
+   41|      1|            XCTAssertEqual(jsonResult!["weight"] as? Double, weight)
+   42|      1|        } catch let parsingError {
+   43|      0|            print("Error", parsingError)
+   44|      1|        }
+   45|      1|    }
+   46|       |
+   47|       |}
+
+/Users/fballesteros/Documents/open-source/merge_bot_test/CoverageAnalyzerTests/OptionsTests.swift:
+    1|       |//
+    2|       |//  OptionsTests.swift
+    3|       |//  CoverageAnalyzerTests
+    4|       |//
+    5|       |//  Created by Felipe Ballesteros on 6/12/19.
+    6|       |//  Copyright © 2019 Slack. All rights reserved.
+    7|       |//
+    8|       |
+    9|       |import XCTest
+   10|       |
+   11|       |class OptionsTests: XCTestCase {
+   12|       |
+   13|      1|    override func setUp() {
+   14|      1|
+   15|      1|    }
+   16|       |
+   17|      1|    override func tearDown() {
+   18|      1|        // Put teardown code here. This method is called after the invocation of each test method in the class.
+   19|      1|    }
+   20|       |
+   21|      1|    func testExample() {
+   22|      1|        let sampleConfig0:[String:Any] = ["command": "file", "pullFiles": [], "reportFiles": [] ]
+   23|      1|        let sampleConfig1:[String:Any] = ["command":"analyze-all", "pullFiles":[], "reportFiles": ["test_coverage_raw_1.json"]]
+   24|      1|        let sampleConfig2:[String:Any] = ["command": "analyze-files", "pullFiles": [], "reportFiles": ["test_coverage_raw_1.json"]]
+   25|      1|        let sampleConfig3:[String:Any] = ["command":"analyze-files", "pullFiles": ["ObjectLeakDetector.swift", "HUDManager.swift"], "reportFiles": ["test_coverage_raw_1.json"]]
+   26|      1|        let sampleConfig4:[String:Any] = ["pullFiles": [], "reportFiles": [] ]
+   27|      1|
+   28|      1|        let invalidOption = Options(mode: .invalid, pullFiles: [], reportFiles: [])
+   29|      1|        let expectedOption1 = Options(mode: .analyzeAll, pullFiles: [], reportFiles: ["test_coverage_raw_1.json"])
+   30|      1|        let expectedOption2 = Options(mode: .analyzeFiles, pullFiles: [], reportFiles: ["test_coverage_raw_1.json"])
+   31|      1|        let expectedOption3 = Options(mode: .analyzeFiles, pullFiles: ["ObjectLeakDetector.swift", "HUDManager.swift"], reportFiles: ["test_coverage_raw_1.json"])
+   32|      1|
+   33|      1|        let option0 = Options(config: sampleConfig0)
+   34|      1|        let option1 = Options(config: sampleConfig1)
+   35|      1|        let option2 = Options(config: sampleConfig2)
+   36|      1|        let option3 = Options(config: sampleConfig3)
+   37|      1|        let option4 = Options(config: sampleConfig4)
+   38|      1|
+   39|      1|        XCTAssertEqual(option0, invalidOption)
+   40|      1|        XCTAssertEqual(option1, expectedOption1)
+   41|      1|        XCTAssertEqual(option2, expectedOption2)
+   42|      1|        XCTAssertEqual(option3, expectedOption3)
+   43|      1|        XCTAssertEqual(option4, invalidOption)
+   44|      1|
+   45|      1|    }
+   46|       |
+   47|       |}
+
