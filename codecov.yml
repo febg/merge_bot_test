@@ -1,22 +1,11 @@
-coverage:
-  precision: 2
-  round: down
-  range: "70...100"
-
-  status:
-    project: yes
-    patch: yes
-    changes: no
-
-parsers:
-gcov:
-  branch_detection:
-    conditional: yes
-    loop: yes
-    method: no
-    macro: no
-
+codecov:
+  bot: febg
+  require_ci_to_pass: false
 comment:
-  layout: "header, diff"
+  layout: "files"
   behavior: default
-  require_changes: no
+  require_changes: false  # if true: only post the comment if coverage changes
+  require_base: no        # [yes :: must have a base report to post]
+  require_head: yes       # [yes :: must have a head report to post]
+  branches: null          # branch names that can post comment
+
