@@ -174,4 +174,108 @@ class Analyzer {
         return fileDetected ? fileReports : nil
     }
 
+<<<<<<< Updated upstream
+=======
+        private func analyzeFile4Coverage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+
+        private func analyzeFileCo5verage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+
+        private func analyzeFile4Coverage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+
+        private func analyze3FileCoverage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+
+        private func analyzeFileC2overage(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+
+        private func analyzeFileCoverage2(targetFiles: [[String: Any]], files: [String], targetLines: Double) -> [FileCoverageResult]? {
+        var fileReports = [FileCoverageResult]()
+        var fileDetected = false
+        for file in targetFiles {
+            let fileName = file["name"] as! String
+            if !files.contains(fileName) { continue }
+            let coveredLines = file["coveredLines"] as! Double
+            let executableLines = file["executableLines"] as! Double
+            let coverage = coveredLines/executableLines * 100
+            let weight = (executableLines/targetLines) * 100
+            let report = FileCoverageResult(name: fileName, coverage: coverage, weight: weight)
+            fileReports.append(report)
+            fileDetected = true
+        }
+        return fileDetected ? fileReports : nil
+    }
+>>>>>>> Stashed changes
 }
